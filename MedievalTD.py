@@ -4,8 +4,8 @@ import math
 
 #Creates a screen and a range surface for translucent viewing
 pygame.init()
-screen = pygame.display.set_mode((256,256))
-rangeSurface = pygame.surface.Surface((256,256))
+screen = pygame.display.set_mode((768,768))
+rangeSurface = pygame.surface.Surface((768,768))
 
 #Create enemy path
 
@@ -28,20 +28,21 @@ for x in range(0,16):
     for y in range(0,16):
         newList.append(pygame.Rect(x*16,y*16,16,16))
     tiles.append(newList)
-        
+
+
 class Enemy:
     def __init__(self,x,y,health,speed,imgPath):
         self.x = x
         self.y = y
         self.health = health
         self.speed = speed   #Loads basic Attributes for the Enemy class
-        self.image = pygame.image.load(imgPath) 
+        self.image = pygame.image.load(imgPath)
 
     def drawSelf(self):
         screen.blit(self.image,(self.x,self.y))
 
 class Tower:
-    def __init__(self,x,y,atkSpeed,range,angle,selected,imgPath,spawnedProjectileSpeed,spawnedProjectileImage):
+    def __init__(self,x,y,atkSpeed,range,angle,selected,imgPath,shootImgPath,spawnedProjectileSpeed,spawnedProjectileImage,rotateProjectileImage,projectilePierce,projectileDamage):
         self.x = x
         self.y = y
         self.atkSpeed = atkSpeed
@@ -49,13 +50,25 @@ class Tower:
         self.angle = angle
         self.selected = selected
         self.image = pygame.image.load(imgPath)
-        self.image = pygame.transform.scale(self.image,(24,16))
+        self.image = pygame.transform.scale(self.image,(48,48))
+        self.shootImage = pygame.image.load(shootImgPath)
+        self.shootImage = pygame.transform.scale(self.shootImage,(48,48))
         self.projectiles = []
         self.spawnedProjectileSpeed = spawnedProjectileSpeed
         self.spawnedProjectileImage = spawnedProjectileImage
-    
+        self.rotateProjectileImage = rotateProjectileImage
+        self.projectilePierce = projectilePierce
+        self.isShooting = False
+        self.lastShotTime = 0
+        self.projectileDamage = projectileDamage
+        self.shotTime = 0
+        self.animationTime = 100
+
     def drawSelf(self):
-        newImage = pygame.transform.rotate(self.image,self.angle)
+        if self.isShooting:
+            newImage = pygame.transform.rotate(self.shootImage,self.angle)
+        else:
+            newImage = pygame.transform.rotate(self.image,self.angle)
         screen.blit(newImage,(self.x,self.y))
         for projectile in self.projectiles:
             projectile.drawSelf()
@@ -69,11 +82,13 @@ class Tower:
             self.selected = not self.selected
     
     def shoot(self,angle):
-        self.angle = angle + 180
+        self.angle = angle
         newAngle = math.radians(angle)
         deltaX = 16*math.cos(newAngle)
         deltaY = 16*math.sin(newAngle)
-        self.projectiles.append(Projectile(self.x+deltaX,self.y+deltaY,self.spawnedProjectileSpeed,newAngle,"Images/bullet.png"))
+        self.projectiles.append(Projectile(self.x+deltaX,self.y+deltaY,self.spawnedProjectileSpeed,newAngle,self.spawnedProjectileImage,self.rotateProjectileImage,self.projectileDamage,self.projectilePierce))
+        self.isShooting = True
+        self.shotTime = currentTime
 
     def projChecks(self):
         for i,projectile in enumerate(self.projectiles):
@@ -81,18 +96,24 @@ class Tower:
                 self.projectiles.pop(i)
             projectile.tick()
 
+    def updateAnimation(self):
+        if currentTime-self.shotTime >= self.animationTime:
+            self.isShooting = False
+
 class Cannon(Tower):
-    def __init__(self, x, y, angle,):
-        super().__init__(x, y, 30, 50, angle, False, "Images/castle.png",200,"Images/bullet.png")
+    def __init__(self, x, y, angle):
+        super().__init__(x, y, 30, 50, angle, False, "Images/cannon_idle.png","Images/cannon_shoot.png",200,"Images/cannon_projectile.png",False,1,5)
 
 class Projectile:
-    def __init__(self,x,y,vel,angle,imgPath):
+    def __init__(self,x,y,vel,angle,imgPath,toRotate,damage,pierce):
         self.x = x
         self.y = y
         self.velX = vel*math.sin(angle)
         self.velY = vel*math.cos(angle)
         self.image = pygame.image.load(imgPath)
-        self.image = pygame.transform.rotate(self.image,angle+180)
+        self.image = pygame.transform.scale(self.image,(48,48))
+        if toRotate:
+            self.image = pygame.transform.rotate(self.image,angle+180)
     
     def drawSelf(self):
         screen.blit(self.image,(self.x,self.y))
@@ -113,9 +134,6 @@ rangeSurface.set_alpha(80)
 currentTowers = [tower1]
 currentEnemies = []
 
-
-tower1.shoot(200)
-
 clock = pygame.time.Clock()
 lastTime = 0
 while True:
@@ -135,6 +153,7 @@ while True:
         lastTime = currentTime
     
     for tower in currentTowers:
+        tower.updateAnimation()
         tower.projChecks()
         tower.drawSelf()
             
