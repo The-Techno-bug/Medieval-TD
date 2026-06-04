@@ -67,17 +67,22 @@ class Enemy:
     def drawSelf(self):
         imageRect = self.image.get_rect(center=(self.x,self.y))
         screen.blit(self.image,imageRect)
-        pygame.draw.rect(screen,(15,15,15),(imageRect.center[0]-24,imageRect.center[1]-30,48,5))
-        pygame.draw.rect(screen,(255,0,0),(imageRect.center[0]-24,imageRect.center[1]-30,self.health/48,5))
+        pygame.draw.rect(screen,(15,15,15),(imageRect.center[0]-20,imageRect.center[1]-30,40,5))
+        pygame.draw.rect(screen,(255,0,0),(imageRect.center[0]-20,imageRect.center[1]-30,self.health/40,5))
     
     def move(self):
-        self.pathIndex += 1
-        self.x = gamePath[self.pathIndex][0]
-        self.y = gamePath[self.pathIndex][1]
-        if speed == 2:
+        try:
             self.pathIndex += 1
             self.x = gamePath[self.pathIndex][0]
-            self.y = gamePath[self.pathIndex][1]    
+            self.y = gamePath[self.pathIndex][1]
+            if speed == 2:
+                self.pathIndex += 1
+                self.x = gamePath[self.pathIndex][0]
+                self.y = gamePath[self.pathIndex][1]
+        except Exception: 
+            for i,enemy in enumerate(currentEnemies):
+                if enemy == self:
+                    currentEnemies.pop(i)
 
 class Tower:
     def __init__(self,x,y,atkSpeed,range,angle,selected,shootImgPathList,spawnedProjectileSpeed,spawnedProjectileImage,rotateProjectileImage,projectilePierce,projectileDamage,animationTime):
@@ -119,16 +124,25 @@ class Tower:
         if towerRect.collidepoint(mousePos[0],mousePos[1]):
             self.selected = not self.selected
     
+    def findEnemy(self):
+        for enemy in currentEnemies:
+            if ((enemy.x-self.x)**2 + (enemy.y-self.y)**2)**0.5 < self.range:
+                angle = math.degrees(math.atan2(enemy.x-self.x,enemy.y-self.y))
+                self.shoot(angle)
+                return
+
+
     def shoot(self,angle):
-        self.angle = angle + 180
-        newAngle = math.radians(angle)
-        deltaX = 24*math.sin(newAngle)
-        deltaY = 24*math.cos(newAngle)
-        self.projectiles.append(Projectile(self.x+deltaX,self.y+deltaY,self.x,self.y,self.spawnedProjectileSpeed,angle,self.spawnedProjectileImage,self.rotateProjectileImage,self.projectileDamage,self.projectilePierce,self.range))
-        self.shootingPhase = len(self.shootingImages) - 1
-        self.shotTime = currentTime
-        self.phaseTime = currentTime
-        self.isCycled = False
+        if currentTime-self.shotTime >= self.atkSpeed/speed:
+            self.angle = angle + 180
+            newAngle = math.radians(angle)
+            deltaX = 24*math.sin(newAngle)
+            deltaY = 24*math.cos(newAngle)
+            self.projectiles.append(Projectile(self.x+deltaX,self.y+deltaY,self.x,self.y,self.spawnedProjectileSpeed,angle,self.spawnedProjectileImage,self.rotateProjectileImage,self.projectileDamage,self.projectilePierce,self.range))
+            self.shootingPhase = len(self.shootingImages) - 1
+            self.shotTime = currentTime
+            self.phaseTime = currentTime
+            self.isCycled = False
 
     def projChecks(self):
         for i,projectile in enumerate(self.projectiles):
@@ -145,9 +159,6 @@ class Tower:
             self.phaseTime = currentTime
             self.isCycled = True
 
-    def attack(self):
-        if currentTime-self.shotTime >= self.atkSpeed/speed:
-            self.shoot(random.randint(0,360))
 
 class Cannon(Tower):
     def __init__(self, x, y):
@@ -208,6 +219,7 @@ def towerShop():
     screen.blit(ballistaImage,(676.5,98))
 
 def placeTower(x,y):
+    global placing
     if not occupiedTiles[x][y]:
         if placing == "cannon":
             coords = tiles[x][y].center
@@ -216,6 +228,7 @@ def placeTower(x,y):
             coords = tiles[x][y].center
             currentTowers.append(Ballista(coords[0],coords[1]))
         occupiedTiles[x][y] = 1
+        placing = "none"
 
 placing = "none"
 
@@ -244,12 +257,17 @@ while True:
                     color = (255,0,0)
                 pygame.draw.rect(placementSurface,color,tile)
                 pygame.draw.rect(screen,(0,0,0),tile,2)
+        mousePos = pygame.mouse.get_pos()
         if placing == "cannon":
-            cannonRect = cannonImage.get_rect(center=pygame.mouse.get_pos())
+            cannonRect = cannonImage.get_rect(center=mousePos)
             placementSurface.blit(cannonImage,cannonRect)
+            pygame.draw.circle(rangeSurface,(255,255,255),mousePos,300)
+            pygame.draw.circle(screen,(255,255,255),mousePos,300,2)
         elif placing == "ballista":
-            ballistaRect = ballistaImage.get_rect(center=pygame.mouse.get_pos())
+            ballistaRect = ballistaImage.get_rect(center=mousePos)
             placementSurface.blit(ballistaImage,ballistaRect)
+            pygame.draw.circle(rangeSurface,(255,255,255),mousePos,400)
+            pygame.draw.circle(screen,(255,255,255),mousePos,400,2)
 
 
     for event in pygame.event.get():
@@ -300,8 +318,8 @@ while True:
     for tower in currentTowers:
         tower.updateAnimation()
         tower.projChecks()
+        tower.findEnemy()
         tower.drawSelf()
-        tower.attack()
     
     for enemy in currentEnemies:
         enemy.drawSelf()
