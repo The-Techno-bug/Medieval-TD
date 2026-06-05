@@ -12,6 +12,8 @@ path = pygame.transform.scale(path,(768,768))
 menu = pygame.image.load("Images/side_menu.png")
 menu = pygame.transform.scale(menu,(144,768))
 
+gameFont = pygame.font.SysFont("Akronim",25)
+
 speed1Image = pygame.image.load("Images/speed_normal.png")
 speed1Image = pygame.transform.scale(speed1Image,(48,48))
 speed2Image = pygame.image.load("Images/speed_fast.png")
@@ -63,26 +65,35 @@ class Enemy:
         #Loads basic Attributes for the Enemy class
         self.image = pygame.image.load(imgPath)
         self.image = pygame.transform.scale(self.image,(48,48))
+        self.rect = self.image.get_rect(center=(self.x,self.y))
 
     def drawSelf(self):
-        imageRect = self.image.get_rect(center=(self.x,self.y))
-        screen.blit(self.image,imageRect)
-        pygame.draw.rect(screen,(15,15,15),(imageRect.center[0]-20,imageRect.center[1]-30,40,5))
-        pygame.draw.rect(screen,(255,0,0),(imageRect.center[0]-20,imageRect.center[1]-30,self.health/40,5))
+        self.rect = self.image.get_rect(center=(self.x,self.y))
+        screen.blit(self.image,self.rect)
+        pygame.draw.rect(screen,(15,15,15),(self.rect.center[0]-20,self.rect.center[1]-30,40,5))
+        pygame.draw.rect(screen,(255,0,0),(self.rect.center[0]-20,self.rect.center[1]-30,(self.health/self.maxHealth)*40,5))
     
     def move(self):
         try:
-            self.pathIndex += 1
-            self.x = gamePath[self.pathIndex][0]
-            self.y = gamePath[self.pathIndex][1]
             if speed == 2:
+                iterations = 2*self.speed
+            else:
+                iterations = self.speed
+            
+            for i in range(1,iterations+1):
                 self.pathIndex += 1
                 self.x = gamePath[self.pathIndex][0]
                 self.y = gamePath[self.pathIndex][1]
+           
         except Exception: 
             for i,enemy in enumerate(currentEnemies):
                 if enemy == self:
                     currentEnemies.pop(i)
+
+    def dealDamage(self,damage):
+        self.health -= damage
+        if self.health <= 0:
+            self.pathIndex = 5000
 
 class Tower:
     def __init__(self,x,y,atkSpeed,range,angle,selected,shootImgPathList,spawnedProjectileSpeed,spawnedProjectileImage,rotateProjectileImage,projectilePierce,projectileDamage,animationTime):
@@ -148,6 +159,7 @@ class Tower:
         for i,projectile in enumerate(self.projectiles):
             if projectile.despawnCheck():
                 self.projectiles.pop(i)
+            projectile.checkHits()
             projectile.tick()
 
     def updateAnimation(self):
@@ -166,7 +178,7 @@ class Cannon(Tower):
 
 class Ballista(Tower):
     def __init__(self, x, y):
-        super().__init__(x, y, 300, 400, 0, False,["Images/ballista1.png","Images/ballista2.png","Images/ballista3.png","Images/ballista4.png"],500, "Images/ballista_projectile.png", True, 3, 8, 70)
+        super().__init__(x, y, 300, 400, 0, False,["Images/ballista1.png","Images/ballista2.png","Images/ballista3.png","Images/ballista4.png"],500, "Images/ballista_projectile.png", True, 1, 8, 70)
 
 class Projectile:
     def __init__(self,x,y,parentX,parentY,vel,angle,imgPath,toRotate,damage,pierce,range):
@@ -183,10 +195,13 @@ class Projectile:
         self.damage = damage
         self.pierce = pierce
         self.range = range
+        self.hitEnemies = []
+        self.rect = self.image.get_rect(center=(self.x,self.y))
+
     
     def drawSelf(self):
-        newRect = self.image.get_rect(center=(self.x,self.y))
-        screen.blit(self.image,newRect)
+        self.rect = self.image.get_rect(center=(self.x,self.y))
+        screen.blit(self.image,self.rect)
 
     def tick(self):
         self.x += speed*self.velX/60
@@ -196,13 +211,30 @@ class Projectile:
         if ((self.parentX-self.x)**2 + (self.parentY-self.y)**2)**0.5 >= self.range:
             return True
         return False
+    
+    def checkHits(self):
+        for i,enemy in enumerate(self.hitEnemies):
+            if enemy not in currentEnemies:
+                self.hitEnemies.pop(i)
+        for enemy in currentEnemies:
+            dx = (self.rect.centerx-enemy.rect.centerx)
+            dy = (self.rect.centery-enemy.rect.centery)
+            if (dx**2 + dy**2)**0.5 <= 30:
+                self.hitEnemies.append(enemy)
+                enemy.dealDamage(self.damage)
+                self.pierce -= 1
+        if self.pierce <= 0:
+            self.x = 5000
+
 
 
 rangeSurface.set_alpha(80)
 placementSurface.set_alpha(60)
 
-enemy1 = Enemy(300,300,100,10,"Images/enemy.png")
-enemy1.health = 300
+enemy1 = Enemy(300,300,100,1,"Images/enemy.png")
+
+roundNum = 0
+rounds = []
 
 currentTowers = []
 currentEnemies = []
@@ -214,7 +246,9 @@ ballistaImage = pygame.image.load("Images/ballista1.png")
 ballistaImage = pygame.transform.scale(ballistaImage,(48,48))
 
 def towerShop():
+    roundText = gameFont.render(f"Round {roundNum}",True,(255,0,0))
     screen.blit(menu,(624,0))
+    screen.blit(roundText,(648,0))
     screen.blit(cannonImage,(675,50))
     screen.blit(ballistaImage,(676.5,98))
 
