@@ -1,7 +1,6 @@
 import pygame
-import random
 import math
-
+import copy
 #Creates a screen and a range surface for translucent viewing
 pygame.init()
 screen = pygame.display.set_mode((768,768))
@@ -55,45 +54,85 @@ occupiedTiles = [[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
                  [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]]
 
 class Enemy:
-    def __init__(self,x,y,health,speed,imgPath):
+    def __init__(self,x,y,health,speed,imgPathList,animationTime):
         self.x = x
         self.y = y
         self.health = health
         self.maxHealth = health
-        self.speed = speed   
+        self.speed = speed
         self.pathIndex = 0
         #Loads basic Attributes for the Enemy class
-        self.image = pygame.image.load(imgPath)
-        self.image = pygame.transform.scale(self.image,(48,48))
+        self.images = []
+        for imagePath in imgPathList:
+            image = pygame.image.load(imagePath)
+            image = pygame.transform.scale(image,(17*3, 23*3))
+            self.images.append(image)
+        self.animationTime = animationTime
+        self.animationPhase = 0
+        self.animationLastTime = 0
+        self.damageFlashTime = -100
+        self.damageFlashDuration = 100
+        self.image = self.images[self.animationPhase]
         self.rect = self.image.get_rect(center=(self.x,self.y))
 
     def drawSelf(self):
+        if currentTime-self.animationLastTime >= self.animationTime/speed:
+            self.animationPhase += 1
+            if self.animationPhase >= len(self.images):
+                self.animationPhase = 0
+            self.animationLastTime = currentTime
+        self.image = self.images[self.animationPhase]
         self.rect = self.image.get_rect(center=(self.x,self.y))
-        screen.blit(self.image,self.rect)
+        if currentTime-self.damageFlashTime < self.damageFlashDuration:
+            flashImage = self.image.copy()
+            #Mask out transparent pixels so they dont get tinted
+            flashMask = pygame.mask.from_surface(self.image)
+            flashSurface = flashMask.to_surface(setcolor=(128,0,0,120),unsetcolor=(0,0,0,0))
+            flashImage.blit(flashSurface,(0,0),special_flags=pygame.BLEND_RGBA_ADD)
+            screen.blit(flashImage,self.rect)
+        else:
+            screen.blit(self.image,self.rect)
+
+    def drawHealthBar(self):
         pygame.draw.rect(screen,(15,15,15),(self.rect.center[0]-20,self.rect.center[1]-30,40,5))
         pygame.draw.rect(screen,(255,0,0),(self.rect.center[0]-20,self.rect.center[1]-30,(self.health/self.maxHealth)*40,5))
-    
+
     def move(self):
         try:
             if speed == 2:
                 iterations = 2*self.speed
             else:
                 iterations = self.speed
-            
+
             for i in range(1,iterations+1):
                 self.pathIndex += 1
                 self.x = gamePath[self.pathIndex][0]
                 self.y = gamePath[self.pathIndex][1]
-           
-        except Exception: 
+
+        except Exception:
             for i,enemy in enumerate(currentEnemies):
                 if enemy == self:
                     currentEnemies.pop(i)
 
     def dealDamage(self,damage):
         self.health -= damage
+        self.damageFlashTime = currentTime
         if self.health <= 0:
             self.pathIndex = 5000
+
+    def getVelocity(self):
+        if self.pathIndex >= len(gamePath)-1:
+            return (0,0)
+        nextPathPos = gamePath[self.pathIndex+1]
+        return ((nextPathPos[0]-self.x)*self.speed*50,(nextPathPos[1]-self.y)*self.speed*50)
+
+class Barbarian(Enemy):
+    def __init__(self,x,y):
+        super().__init__(x,y,125,1,["Images/barbarian1.png","Images/barbarian2.png","Images/barbarian3.png","Images/barbarian4.png","Images/barbarian5.png","Images/barbarian6.png"],100)
+
+class Goblin(Enemy):
+    def __init__(self,x,y):
+        super().__init__(x,y,60,2,["Images/goblin1.png","Images/goblin2.png","Images/goblin3.png","Images/goblin4.png","Images/goblin5.png","Images/goblin6.png"],80)
 
 class Tower:
     def __init__(self,x,y,atkSpeed,range,angle,selected,shootImgPathList,spawnedProjectileSpeed,spawnedProjectileImage,rotateProjectileImage,projectilePierce,projectileDamage,animationTime):
@@ -133,14 +172,51 @@ class Tower:
     def checkClick(self,mousePos):
         towerRect = pygame.Rect(self.x-24,self.y-24,48,48)
         if towerRect.collidepoint(mousePos[0],mousePos[1]):
-            self.selected = not self.selected
-    
+            wasSelected = self.selected
+            for tower in currentTowers:
+                tower.selected = False
+            self.selected = not wasSelected
+            return True
+        return False
+
     def findEnemy(self):
-        for enemy in currentEnemies:
+        #Grab the enemy furthest in the path
+        enemiesByProgress = sorted(currentEnemies,key=lambda enemy: enemy.pathIndex,reverse=True)
+        for enemy in enemiesByProgress:
             if ((enemy.x-self.x)**2 + (enemy.y-self.y)**2)**0.5 < self.range:
-                angle = math.degrees(math.atan2(enemy.x-self.x,enemy.y-self.y))
-                self.shoot(angle)
-                return
+                aimPoint = self.predictAimPoint(enemy)
+                if ((aimPoint[0]-self.x)**2 + (aimPoint[1]-self.y)**2)**0.5 < self.range:
+                    angle = math.degrees(math.atan2(aimPoint[0]-self.x,aimPoint[1]-self.y))
+                    self.shoot(angle)
+                    return
+
+    def predictAimPoint(self,enemy):
+        enemyVel = enemy.getVelocity()
+        #Vector going from tower to enemy
+        relX = enemy.x-self.x
+        relY = enemy.y-self.y
+        #Use quadratic formula to find travel time to enemy
+        a = enemyVel[0]**2+enemyVel[1]**2-self.spawnedProjectileSpeed**2
+        b = 2*(relX*enemyVel[0]+relY*enemyVel[1])
+        c = relX**2+relY**2
+        travelTime = 0
+        if abs(a) < 0.01:
+            #If a is very close to 0 it is basically linear function
+            if b != 0:
+                travelTime = -c/b
+        else:
+            discriminant = b**2-4*a*c
+            if discriminant >= 0:
+                time1 = (-b+discriminant**0.5)/(2*a)
+                time2 = (-b-discriminant**0.5)/(2*a)
+                if time1 < 0:
+                    travelTime = time2
+                elif time2 < 0:
+                    travelTime = time1
+                else:
+                    travelTime = min(time1,time2)
+        #The aim point is the enemy's position at the predicted travel time
+        return (enemy.x+enemyVel[0]*travelTime,enemy.y+enemyVel[1]*travelTime)
 
 
     def shoot(self,angle):
@@ -174,11 +250,23 @@ class Tower:
 
 class Cannon(Tower):
     def __init__(self, x, y):
-        super().__init__(x, y, 3000, 300, 0, False,["Images/cannon_idle.png","Images/cannon_shoot.png"],200,"Images/cannon_projectile.png",False,1,5,100)
+        super().__init__(x, y, 3000, 300, 0, False,["Images/cannon_idle.png","Images/cannon_shoot.png"],200,"Images/cannon_projectile.png",False,1,12,100)
+
+    def shoot(self,angle):
+        if currentTime-self.shotTime >= self.atkSpeed/speed:
+            self.angle = angle + 180
+            newAngle = math.radians(angle)
+            deltaX = 24*math.sin(newAngle)
+            deltaY = 24*math.cos(newAngle)
+            self.projectiles.append(SplashProjectile(self.x+deltaX,self.y+deltaY,self.x,self.y,self.spawnedProjectileSpeed,angle,self.spawnedProjectileImage,self.rotateProjectileImage,self.projectileDamage,self.projectilePierce,self.range,80))
+            self.shootingPhase = len(self.shootingImages) - 1
+            self.shotTime = currentTime
+            self.phaseTime = currentTime
+            self.isCycled = False
 
 class Ballista(Tower):
     def __init__(self, x, y):
-        super().__init__(x, y, 300, 400, 0, False,["Images/ballista1.png","Images/ballista2.png","Images/ballista3.png","Images/ballista4.png"],500, "Images/ballista_projectile.png", True, 1, 8, 70)
+        super().__init__(x, y, 300, 400, 0, False,["Images/ballista1.png","Images/ballista2.png","Images/ballista3.png","Images/ballista4.png"],500, "Images/ballista_projectile.png", True, 1, 4, 70)
 
 class Projectile:
     def __init__(self,x,y,parentX,parentY,vel,angle,imgPath,toRotate,damage,pierce,range):
@@ -198,7 +286,6 @@ class Projectile:
         self.hitEnemies = []
         self.rect = self.image.get_rect(center=(self.x,self.y))
 
-    
     def drawSelf(self):
         self.rect = self.image.get_rect(center=(self.x,self.y))
         screen.blit(self.image,self.rect)
@@ -211,7 +298,7 @@ class Projectile:
         if ((self.parentX-self.x)**2 + (self.parentY-self.y)**2)**0.5 >= self.range:
             return True
         return False
-    
+
     def checkHits(self):
         for i,enemy in enumerate(self.hitEnemies):
             if enemy not in currentEnemies:
@@ -226,27 +313,69 @@ class Projectile:
         if self.pierce <= 0:
             self.x = 5000
 
+class SplashProjectile(Projectile):
+    def __init__(self,x,y,parentX,parentY,vel,angle,imgPath,toRotate,damage,pierce,range,splashRadius):
+        super().__init__(x,y,parentX,parentY,vel,angle,imgPath,toRotate,damage,pierce,range)
+        self.splashRadius = splashRadius
+        self.hasSplashed = False
+
+    def splash(self):
+        if not self.hasSplashed:
+            explosionEffects.append((self.x,self.y,currentTime))
+            for enemy in currentEnemies:
+                dx = self.x-enemy.x
+                dy = self.y-enemy.y
+                if (dx**2 + dy**2)**0.5 <= self.splashRadius:
+                    enemy.dealDamage(self.damage)
+            self.hasSplashed = True
+
+    def despawnCheck(self):
+        if ((self.parentX-self.x)**2 + (self.parentY-self.y)**2)**0.5 >= self.range:
+            self.splash()
+            return True
+        return False
+
+    def checkHits(self):
+        for enemy in currentEnemies:
+            dx = (self.rect.centerx-enemy.rect.centerx)
+            dy = (self.rect.centery-enemy.rect.centery)
+            if (dx**2 + dy**2)**0.5 <= 30:
+                self.splash()
+                self.x = 5000
+                return
+
 
 
 rangeSurface.set_alpha(80)
 placementSurface.set_alpha(60)
-
-enemy1 = Enemy(300,300,100,1,"Images/enemy.png")
+rangeSurface.set_colorkey((0,0,0))
+placementSurface.set_colorkey((0,0,0))
 
 roundNum = 0
-rounds = []
+rounds = [[(Barbarian,0),(Barbarian,1000),(Goblin,1000),(Barbarian,1000),(Goblin,1000)],
+          [(Goblin,0),(Goblin,800),(Barbarian,800),(Goblin,800),(Barbarian,800),(Goblin,800)],
+          [(Barbarian,0),(Goblin,700),(Goblin,700),(Barbarian,700),(Goblin,700),(Barbarian,700),(Goblin,700)],
+          [copy.deepcopy((Barbarian,250)) for _ in range(50)] + [copy.deepcopy((Goblin,250)) for _ in range(50)]]
+roundEnemyIndex = 0
+lastSpawnTime = 0
+roundActive = False
 
 currentTowers = []
 currentEnemies = []
-currentEnemies.append(enemy1)
+explosionEffects = []
 
 cannonImage = pygame.image.load("Images/cannon_idle.png")
 cannonImage = pygame.transform.scale(cannonImage,(48,48))
 ballistaImage = pygame.image.load("Images/ballista1.png")
 ballistaImage = pygame.transform.scale(ballistaImage,(48,48))
+explosionImages = []
+for i in range(1,9):
+    explosionImage = pygame.image.load(f"Images/explosion{i}.png")
+    explosionImage = pygame.transform.scale(explosionImage,(81,81))
+    explosionImages.append(explosionImage)
 
 def towerShop():
-    roundText = gameFont.render(f"Round {roundNum}",True,(255,0,0))
+    roundText = gameFont.render(f"Round {roundNum}",True,(255,255,255))
     screen.blit(menu,(624,0))
     screen.blit(roundText,(648,0))
     screen.blit(cannonImage,(675,50))
@@ -264,6 +393,37 @@ def placeTower(x,y):
         occupiedTiles[x][y] = 1
         placing = "none"
 
+def startRound():
+    global roundNum,roundEnemyIndex,lastSpawnTime,roundActive
+    if roundNum < len(rounds):
+        roundNum += 1
+        roundEnemyIndex = 0
+        lastSpawnTime = currentTime
+        roundActive = True
+
+def updateRound():
+    global roundEnemyIndex,lastSpawnTime,roundActive
+    if not roundActive:
+        startRound()
+    if roundActive and roundEnemyIndex < len(rounds[roundNum-1]):
+        enemyInfo = rounds[roundNum-1][roundEnemyIndex]
+        if currentTime-lastSpawnTime >= enemyInfo[1]/speed:
+            currentEnemies.append(enemyInfo[0](gamePath[0][0],gamePath[0][1]))
+            roundEnemyIndex += 1
+            lastSpawnTime = currentTime
+    elif roundActive and not currentEnemies:
+        roundActive = False
+
+def drawExplosionEffects():
+    for i in range(len(explosionEffects)-1,-1,-1):
+        effect = explosionEffects[i]
+        frame = int((currentTime-effect[2])/75)
+        if frame >= len(explosionImages):
+            explosionEffects.pop(i)
+        else:
+            explosionRect = explosionImages[frame].get_rect(center=(effect[0],effect[1]))
+            screen.blit(explosionImages[frame],explosionRect)
+
 placing = "none"
 
 EnemyMove = pygame.event.custom_type()
@@ -278,8 +438,8 @@ while True:
     rangeSurface.fill((0,0,0))
     placementSurface.fill((0,0,0))  #Fill surfaces
     screen.blit(path,(0,0))
-    
-    if placing is not "none":
+
+    if placing != "none":
         for i,tileRow in enumerate(tiles):
             for j,tile in enumerate(tileRow):
                 color = (255,255,255)
@@ -308,8 +468,16 @@ while True:
         if event.type == pygame.QUIT:
             pygame.quit()
         elif event.type == pygame.MOUSEBUTTONDOWN:  #Check if the towers are being clicked
+            towerClicked = False
             for tower in currentTowers:
-                tower.checkClick(event.pos)
+                if tower.checkClick(event.pos):
+                    towerClicked = True
+            if not towerClicked:
+                for tower in currentTowers:
+                    tower.selected = False
+            shopClicked = event.pos[0] >= 675 and event.pos[0] <= 723 and event.pos[1] >= 50 and event.pos[1] <= 146
+            if placing != "none" and event.pos[0] >= 624 and not shopClicked:
+                placing = "none"
             if event.pos[0] >= 675 and event.pos[0] <= 723:
                 if event.pos[1] >= 50 and event.pos[1] < 98:
                     if placing == "cannon":
@@ -320,7 +488,12 @@ while True:
                     if placing == "ballista":
                         placing = "none"
                     else:
-                        placing = "ballista"   
+                        placing = "ballista"
+            if event.pos[0] >= 672 and event.pos[0] <= 720 and event.pos[1] >= 720 and event.pos[1] <= 768:
+                if speed == 1:
+                    speed = 2
+                else:
+                    speed = 1
 
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
@@ -342,19 +515,20 @@ while True:
                     speed = 2
                 else:
                     speed = 1
-        
+
         elif event.type == EnemyMove:
             for enemy in currentEnemies:
                 enemy.move()
     currentTime = pygame.time.get_ticks()
-    
+    updateRound()
+
 
     for tower in currentTowers:
         tower.updateAnimation()
         tower.projChecks()
         tower.findEnemy()
         tower.drawSelf()
-    
+
     for enemy in currentEnemies:
         enemy.drawSelf()
 
@@ -365,6 +539,8 @@ while True:
         screen.blit(speed1Image,(672,720))
     else:
         screen.blit(speed2Image,(672,720))
+    drawExplosionEffects()
+    for enemy in currentEnemies:
+        enemy.drawHealthBar()
     pygame.display.update()
     clock.tick(60)
-    
