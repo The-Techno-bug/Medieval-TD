@@ -11,7 +11,8 @@ path = pygame.transform.scale(path,(768,768))
 menu = pygame.image.load("Images/side_menu.png")
 menu = pygame.transform.scale(menu,(144,768))
 
-gameFont = pygame.font.SysFont("Akronim",25)
+gameFont = pygame.font.Font("Font/BreeSerif-Regular.ttf",25)
+smallFont = pygame.font.SysFont("Font/BreeSerif-Regular.ttf",18)
 
 speed1Image = pygame.image.load("Images/speed_normal.png")
 speed1Image = pygame.transform.scale(speed1Image,(48,48))
@@ -160,14 +161,14 @@ class Tower:
         self.isCycled = False
 
     def drawSelf(self):
+        if self.selected:
+            pygame.draw.circle(rangeSurface,(255,255,255),(self.x,self.y),self.range)
+            pygame.draw.circle(screen,(255,255,255),(self.x,self.y),self.range,2)
         newImage = pygame.transform.rotate(self.shootingImages[-self.shootingPhase],self.angle)
         newRect = newImage.get_rect(center=(self.x,self.y))
         screen.blit(newImage,newRect)
         for projectile in self.projectiles:
             projectile.drawSelf()
-        if self.selected:
-            pygame.draw.circle(rangeSurface,(255,255,255),(self.x,self.y),self.range)
-            pygame.draw.circle(screen,(255,255,255),(self.x,self.y),self.range,2)
 
     def checkClick(self,mousePos):
         towerRect = pygame.Rect(self.x-24,self.y-24,48,48)
@@ -247,7 +248,6 @@ class Tower:
             self.phaseTime = currentTime
             self.isCycled = True
 
-
 class Cannon(Tower):
     def __init__(self, x, y):
         super().__init__(x, y, 3000, 300, 0, False,["Images/cannon_idle.png","Images/cannon_shoot.png"],200,"Images/cannon_projectile.png",False,1,12,100)
@@ -266,7 +266,7 @@ class Cannon(Tower):
 
 class Ballista(Tower):
     def __init__(self, x, y):
-        super().__init__(x, y, 300, 400, 0, False,["Images/ballista1.png","Images/ballista2.png","Images/ballista3.png","Images/ballista4.png"],500, "Images/ballista_projectile.png", True, 1, 4, 70)
+        super().__init__(x, y, 333, 400, 0, False,["Images/ballista1.png","Images/ballista2.png","Images/ballista3.png","Images/ballista4.png"],500, "Images/ballista_projectile.png", True, 1, 6, 70)
 
 class Projectile:
     def __init__(self,x,y,parentX,parentY,vel,angle,imgPath,toRotate,damage,pierce,range):
@@ -306,7 +306,7 @@ class Projectile:
         for enemy in currentEnemies:
             dx = (self.rect.centerx-enemy.rect.centerx)
             dy = (self.rect.centery-enemy.rect.centery)
-            if (dx**2 + dy**2)**0.5 <= 30:
+            if (dx**2 + dy**2)**0.5 <= 30 and enemy not in self.hitEnemies:
                 self.hitEnemies.append(enemy)
                 enemy.dealDamage(self.damage)
                 self.pierce -= 1
@@ -344,8 +344,6 @@ class SplashProjectile(Projectile):
                 self.x = 5000
                 return
 
-
-
 rangeSurface.set_alpha(80)
 placementSurface.set_alpha(60)
 rangeSurface.set_colorkey((0,0,0))
@@ -375,9 +373,9 @@ for i in range(1,9):
     explosionImages.append(explosionImage)
 
 def towerShop():
-    roundText = gameFont.render(f"Round {roundNum}",True,(255,255,255))
+    roundText = gameFont.render(f"Round {roundNum}",True,(0,0,0))
     screen.blit(menu,(624,0))
-    screen.blit(roundText,(648,0))
+    screen.blit(roundText,(648,10))
     screen.blit(cannonImage,(675,50))
     screen.blit(ballistaImage,(676.5,98))
 
@@ -392,6 +390,40 @@ def placeTower(x,y):
             currentTowers.append(Ballista(coords[0],coords[1]))
         occupiedTiles[x][y] = 1
         placing = "none"
+
+def showCannonTooltip():
+    mousePos = pygame.mouse.get_pos()
+    topleft = (mousePos[0]-144,mousePos[1])
+    pygame.draw.rect(placementSurface,(255,255,255),(topleft[0],topleft[1],144,235))
+    screen.blit(placementSurface,(0,0))
+    pygame.draw.rect(screen,(0,0,0),(topleft[0],topleft[1],144,235),2)
+    pygame.draw.rect(screen,(0,0,0),(topleft[0],topleft[1]+50,144,2))
+    screen.blit(cannonImage,topleft)
+    cannonTowerText = gameFont.render("Cannon",True,(0,0,0))
+    cannonTowerTextRect = cannonTowerText.get_rect(center=(topleft[0]+96,topleft[1]+24))
+    screen.blit(cannonTowerText,cannonTowerTextRect)
+    statsText = ["Cost:             $150","Attack Speed:   1/3s","Damage:          6","Range:          300","Pierce:          1"]
+    for i,stat in enumerate(statsText):
+        statsTextRender = smallFont.render(stat,True,(0,0,0))
+        statsTextRenderRect = statsTextRender.get_rect(center=((topleft[0]+72,topleft[1]+70+i*35)))
+        screen.blit(statsTextRender,statsTextRenderRect)
+
+def showBallistaTooltip():
+    mousePos = pygame.mouse.get_pos()
+    topleft = (mousePos[0]-144,mousePos[1])
+    pygame.draw.rect(placementSurface,(255,255,255),(topleft[0],topleft[1],144,235))
+    screen.blit(placementSurface,(0,0))
+    pygame.draw.rect(screen,(0,0,0),(topleft[0],topleft[1],144,235),2)
+    pygame.draw.rect(screen,(0,0,0),(topleft[0],topleft[1]+50,144,2))
+    screen.blit(ballistaImage,topleft)
+    ballistaTowerText = gameFont.render("Ballista",True,(0,0,0))
+    ballistaTowerTextRect = ballistaTowerText.get_rect(center=(topleft[0]+96,topleft[1]+24))
+    screen.blit(ballistaTowerText,ballistaTowerTextRect)
+    statsText = ["Cost:             $300","Attack Speed:   3/s","Damage:          4","Range:          400","Pierce:          1"]
+    for i,stat in enumerate(statsText):
+        statsTextRender = smallFont.render(stat,True,(0,0,0))
+        statsTextRenderRect = statsTextRender.get_rect(center=((topleft[0]+72,topleft[1]+70+i*35)))
+        screen.blit(statsTextRender,statsTextRenderRect)
 
 def startRound():
     global roundNum,roundEnemyIndex,lastSpawnTime,roundActive
@@ -417,7 +449,7 @@ def updateRound():
 def drawExplosionEffects():
     for i in range(len(explosionEffects)-1,-1,-1):
         effect = explosionEffects[i]
-        frame = int((currentTime-effect[2])/75)
+        frame = int((currentTime-effect[2])*speed/75)
         if frame >= len(explosionImages):
             explosionEffects.pop(i)
         else:
@@ -520,9 +552,8 @@ while True:
             for enemy in currentEnemies:
                 enemy.move()
     currentTime = pygame.time.get_ticks()
-    updateRound()
-
-
+    updateRound()    
+                    
     for tower in currentTowers:
         tower.updateAnimation()
         tower.projChecks()
@@ -535,6 +566,12 @@ while True:
     screen.blit(rangeSurface,(0,0))
     screen.blit(placementSurface,(0,0))
     towerShop()
+    mousePos = pygame.mouse.get_pos()
+    if mousePos[0] >= 675 and mousePos[0] <= 723 and placing == "none": 
+        if mousePos[1] >= 50 and mousePos[1] < 98:
+           showCannonTooltip()
+        elif mousePos[1] >= 98 and mousePos[1] <= 146:
+            showBallistaTooltip()
     if speed == 1:
         screen.blit(speed1Image,(672,720))
     else:
