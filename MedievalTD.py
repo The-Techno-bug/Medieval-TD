@@ -152,6 +152,10 @@ class Goblin(Enemy):  #Goblin
     def __init__(self,x,y):
         super().__init__(x,y,60,2,["Images/goblin1.png","Images/goblin2.png","Images/goblin3.png","Images/goblin4.png","Images/goblin5.png","Images/goblin6.png"],80,20)
 
+class Knight(Enemy):  #Knight
+    def __init__(self,x,y):
+        super().__init__(x,y,500,1,["Images/knight1.png","Images/knight2.png","Images/knight3.png","Images/knight4.png","Images/knight5.png","Images/knight6.png"],100,100)
+
 class Tower:
     def __init__(self,x,y,atkSpeed,range,angle,selected,shootImgPathList,spawnedProjectileSpeed,spawnedProjectileImage,rotateProjectileImage,projectilePierce,projectileDamage,animationTime):
         #Loads tower attributes
@@ -395,7 +399,8 @@ placementSurface.set_colorkey((0,0,0))
 roundNum = 0  #Rounds, money, lives, and tower costs
 rounds = [[(Barbarian,0),(Barbarian,2000),(Barbarian,2000),(Barbarian,2000),(Barbarian,2000)],
           [(Goblin,0),(Goblin,600),(Barbarian,600),(Goblin,600),(Barbarian,600),(Goblin,600),(Goblin,600),(Barbarian,600),(Goblin,600),(Barbarian,600)],
-          [(Goblin,0),(Goblin,450),(Goblin,450),(Goblin,450),(Goblin,450),(Goblin,450),(Goblin,450),(Goblin,450),(Goblin,450),(Goblin,450),(Goblin,450),(Goblin,450),(Goblin,450),(Goblin,450)]]
+          [(Goblin,0),(Goblin,450),(Goblin,450),(Goblin,450),(Goblin,450),(Goblin,450),(Goblin,450),(Goblin,450),(Goblin,450),(Goblin,450),(Goblin,450),(Goblin,450),(Goblin,450),(Goblin,450)],
+          [(Knight,0),(Knight,5000)]]
 roundEnemyIndex = 0
 lastSpawnTime = 0
 roundActive = False
@@ -535,8 +540,12 @@ def generateRound(roundNumber):
     enemyCount = 10+roundNumber*5
     delayBase = max(100,700-roundNumber*40)
     goblinChance = min(85,40+roundNumber*7)
+    knightChance = min(25,max(0,(roundNumber-4)*3))
     for i in range(0,enemyCount):
-        if random.randint(1,100) <= goblinChance:
+        enemyRoll = random.randint(1,100)
+        if enemyRoll <= knightChance:
+            enemyType = Knight
+        elif enemyRoll <= knightChance+goblinChance:
             enemyType = Goblin
         else:
             enemyType = Barbarian
