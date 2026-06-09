@@ -1,6 +1,7 @@
 import pygame
 import math
 import copy
+import random
 #Creates a screen and a range surface for translucent viewing
 pygame.init()
 screen = pygame.display.set_mode((768,768))
@@ -59,6 +60,7 @@ occupiedTiles = [[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
                  [0,0,0,0,0,0,1,0,0,0,1,0,0,0,0,0],
                  [0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0],
                  [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]]
+startOccupiedTiles = copy.deepcopy(occupiedTiles)
 
 class Enemy:
     def __init__(self,x,y,health,speed,imgPathList,animationTime,reward):
@@ -391,10 +393,9 @@ rangeSurface.set_colorkey((0,0,0))
 placementSurface.set_colorkey((0,0,0))
 
 roundNum = 0  #Rounds, money, lives, and tower costs
-rounds = [[(Barbarian,0),(Barbarian,1000),(Goblin,1000),(Barbarian,1000),(Goblin,1000)],
-          [(Goblin,0),(Goblin,800),(Barbarian,800),(Goblin,800),(Barbarian,800),(Goblin,800)],
-          [(Barbarian,0),(Goblin,700),(Goblin,700),(Barbarian,700),(Goblin,700),(Barbarian,700),(Goblin,700)],
-          [copy.deepcopy((Barbarian,250)) for _ in range(50)] + [copy.deepcopy((Goblin,250)) for _ in range(50)]]
+rounds = [[(Barbarian,0),(Barbarian,2000),(Barbarian,2000),(Barbarian,2000),(Barbarian,2000)],
+          [(Goblin,0),(Goblin,600),(Barbarian,600),(Goblin,600),(Barbarian,600),(Goblin,600),(Goblin,600),(Barbarian,600),(Goblin,600),(Barbarian,600)],
+          [(Goblin,0),(Goblin,450),(Goblin,450),(Goblin,450),(Goblin,450),(Goblin,450),(Goblin,450),(Goblin,450),(Goblin,450),(Goblin,450),(Goblin,450),(Goblin,450),(Goblin,450),(Goblin,450)]]
 roundEnemyIndex = 0
 lastSpawnTime = 0
 roundActive = False
@@ -419,7 +420,9 @@ cannonShopRect = pygame.Rect(675,48,48,48)
 ballistaShopRect = pygame.Rect(677,96,48,48)
 catapultShopRect = pygame.Rect(675,144,48,48)
 startImage = pygame.image.load("Images/start.png")
+startImage = pygame.transform.scale(startImage,(256,64))
 startHoverImage = pygame.image.load("Images/start_hover.png")
+startHoverImage = pygame.transform.scale(startHoverImage,(272,80))
 
 
 #Creates explosion animation
@@ -527,13 +530,31 @@ def showCatapultTooltip():  #Catapult Tooltip Rendering
         statsTextRenderRect = statsTextRender.get_rect(center=((topleft[0]+72,topleft[1]+70+i*35)))
         screen.blit(statsTextRender,statsTextRenderRect)
 
+def generateRound(roundNumber):
+    newRound = []
+    enemyCount = 10+roundNumber*5
+    delayBase = max(100,700-roundNumber*40)
+    goblinChance = min(85,40+roundNumber*7)
+    for i in range(0,enemyCount):
+        if random.randint(1,100) <= goblinChance:
+            enemyType = Goblin
+        else:
+            enemyType = Barbarian
+        if i == 0:
+            delay = 0
+        else:
+            delay = random.randint(max(120,delayBase-120),delayBase+120)
+        newRound.append((enemyType,delay))
+    return newRound
+
 def startRound():  #Starts next round
     global roundNum,roundEnemyIndex,lastSpawnTime,roundActive
-    if roundNum < len(rounds):
-        roundNum += 1
-        roundEnemyIndex = 0
-        lastSpawnTime = currentTime
-        roundActive = True
+    roundNum += 1
+    if roundNum > len(rounds):
+        rounds.append(generateRound(roundNum))
+    roundEnemyIndex = 0
+    lastSpawnTime = currentTime
+    roundActive = True
     
 
 def updateRound(): #General function to spawn enemies, change rounds and add money once the round is over
@@ -560,8 +581,59 @@ def drawExplosionEffects():  #Draws explosion
             explosionRect = explosionImages[frame].get_rect(center=(effect[0],effect[1]))
             screen.blit(explosionImages[frame],explosionRect)
 
+class MainMenu:
+    def __init__(self):
+        self.startRect = startImage.get_rect(center=(384,384))
+
+    def drawSelf(self):
+        overlay = pygame.Surface((768,768),pygame.SRCALPHA)
+        overlay.fill((0,0,0,150))
+        screen.blit(overlay,(0,0))
+        titleText = gameFont.render("Medieval TD",True,(255,255,255))
+        titleRect = titleText.get_rect(center=(384,300))
+        screen.blit(titleText,titleRect)
+        if self.startRect.collidepoint(pygame.mouse.get_pos()):
+            hoverRect = startHoverImage.get_rect(center=self.startRect.center)
+            screen.blit(startHoverImage,hoverRect)
+        else:
+            screen.blit(startImage,self.startRect)
+
+    def checkClick(self,mousePos):
+        return self.startRect.collidepoint(mousePos)
+
+class LosingScreen(MainMenu):
+    def drawSelf(self):
+        overlay = pygame.Surface((768,768),pygame.SRCALPHA)
+        overlay.fill((0,0,0,170))
+        screen.blit(overlay,(0,0))
+        titleText = gameFont.render("You Lost",True,(255,255,255))
+        titleRect = titleText.get_rect(center=(384,300))
+        screen.blit(titleText,titleRect)
+        if self.startRect.collidepoint(pygame.mouse.get_pos()):
+            hoverRect = startHoverImage.get_rect(center=self.startRect.center)
+            screen.blit(startHoverImage,hoverRect)
+        else:
+            screen.blit(startImage,self.startRect)
+
+def resetGame():
+    global roundNum,roundEnemyIndex,lastSpawnTime,roundActive,money,lives,currentTowers,currentEnemies,explosionEffects,occupiedTiles,placing,speed
+    roundNum = 0
+    roundEnemyIndex = 0
+    lastSpawnTime = currentTime
+    roundActive = False
+    money = 300
+    lives = 500
+    currentTowers = []
+    currentEnemies = []
+    explosionEffects = []
+    occupiedTiles = copy.deepcopy(startOccupiedTiles)
+    placing = "none"
+    speed = 1
+
 placing = "none"
 state = "start"
+mainMenu = MainMenu()
+losingScreen = LosingScreen()
 
 EnemyMove = pygame.event.custom_type()  #Creates an event for the enemy to check movement every 20ms
 pygame.time.set_timer(EnemyMove,20)
@@ -570,13 +642,15 @@ clock = pygame.time.Clock()
 lastTime = 0
 a = 0
 speed = 1
+currentTime = pygame.time.get_ticks()
 while True:  #Main Loop
     screen.fill((0,0,0))
     rangeSurface.fill((0,0,0))
     placementSurface.fill((0,0,0))  #Fill surfaces
     screen.blit(path,(0,0))
+    currentTime = pygame.time.get_ticks()
 
-    if placing != "none":  #Render shadow cannon when in placing mode over your mouse and create tile system. Also highlight occupied squares red
+    if state == "game" and placing != "none":  #Render shadow cannon when in placing mode over your mouse and create tile system. Also highlight occupied squares red
         for i,tileRow in enumerate(tiles):
             for j,tile in enumerate(tileRow):
                 color = (255,255,255)
@@ -610,38 +684,45 @@ while True:  #Main Loop
         if event.type == pygame.QUIT:
             pygame.quit()
         elif event.type == pygame.MOUSEBUTTONDOWN:  #Check if the towers are being clicked
-            towerClicked = False
-            for tower in currentTowers:
-                if tower.checkClick(event.pos):
-                    towerClicked = True
-            if not towerClicked:
+            if state == "start" and mainMenu.checkClick(event.pos):
+                resetGame()
+                state = "game"
+            elif state == "lost" and losingScreen.checkClick(event.pos):
+                resetGame()
+                state = "game"
+            elif state == "game":
+                towerClicked = False
                 for tower in currentTowers:
-                    tower.selected = False
-            shopClicked = cannonShopRect.collidepoint(event.pos) or ballistaShopRect.collidepoint(event.pos) or catapultShopRect.collidepoint(event.pos)
-            if placing != "none" and event.pos[0] >= 624 and not shopClicked:
-                placing = "none"
-            if cannonShopRect.collidepoint(event.pos):  #Check if the user is trying to buy from the shop
-                if placing == "cannon":
+                    if tower.checkClick(event.pos):
+                        towerClicked = True
+                if not towerClicked:
+                    for tower in currentTowers:
+                        tower.selected = False
+                shopClicked = cannonShopRect.collidepoint(event.pos) or ballistaShopRect.collidepoint(event.pos) or catapultShopRect.collidepoint(event.pos)
+                if placing != "none" and event.pos[0] >= 624 and not shopClicked:
                     placing = "none"
-                else:
-                    placing = "cannon"
-            elif ballistaShopRect.collidepoint(event.pos):
-                if placing == "ballista":
-                    placing = "none"
-                else:
-                    placing = "ballista"
-            elif catapultShopRect.collidepoint(event.pos):
-                if placing == "catapult":
-                    placing = "none"
-                else:
-                    placing = "catapult"
-            if event.pos[0] >= 672 and event.pos[0] <= 720 and event.pos[1] >= 720 and event.pos[1] <= 768:
-                if speed == 1:
-                    speed = 2
-                else:
-                    speed = 1
+                if cannonShopRect.collidepoint(event.pos):  #Check if the user is trying to buy from the shop
+                    if placing == "cannon":
+                        placing = "none"
+                    else:
+                        placing = "cannon"
+                elif ballistaShopRect.collidepoint(event.pos):
+                    if placing == "ballista":
+                        placing = "none"
+                    else:
+                        placing = "ballista"
+                elif catapultShopRect.collidepoint(event.pos):
+                    if placing == "catapult":
+                        placing = "none"
+                    else:
+                        placing = "catapult"
+                if event.pos[0] >= 672 and event.pos[0] <= 720 and event.pos[1] >= 720 and event.pos[1] <= 768:
+                    if speed == 1:
+                        speed = 2
+                    else:
+                        speed = 1
 
-        elif event.type == pygame.KEYDOWN:
+        elif event.type == pygame.KEYDOWN and state == "game":
             if event.key == pygame.K_ESCAPE:  #Unselect all and stop placing
                 placing = "none"
                 for tower in currentTowers:
@@ -667,40 +748,46 @@ while True:  #Main Loop
                 else:
                     speed = 1
 
-        elif event.type == EnemyMove:  #Move enemies
+        elif event.type == EnemyMove and state == "game":  #Move enemies
             for enemy in currentEnemies:
                 enemy.move()
-    currentTime = pygame.time.get_ticks()
-    updateRound()
-    if speed == 1:
-        screen.blit(speed1Image,(672,720))
-    else:
-        screen.blit(speed2Image,(672,720))
+    if state == "game":
+        updateRound()
+        if lives <= 0:
+            state = "lost"
+            placing = "none"
+        for tower in currentTowers:   #Update all towers
+            tower.updateAnimation()
+            tower.projChecks()
+            tower.findEnemy()
+            tower.drawSelf()
 
-    for tower in currentTowers:   #Update all towers
-        tower.updateAnimation()
-        tower.projChecks()
-        tower.findEnemy()
-        tower.drawSelf()
+        for enemy in currentEnemies:  #Draw all enemies
+            enemy.drawSelf()
 
-    for enemy in currentEnemies:  #Draw all enemies
-        enemy.drawSelf()
+        screen.blit(rangeSurface,(0,0))
+        screen.blit(placementSurface,(0,0))
+        towerShop()
+        if speed == 1:
+            screen.blit(speed1Image,(672,720))
+        else:
+            screen.blit(speed2Image,(672,720))
+        mousePos = pygame.mouse.get_pos()
+        if placing == "none":   #Show tooltips when not in placing mode
+            if cannonShopRect.collidepoint(mousePos):
+               showCannonTooltip()
+            elif ballistaShopRect.collidepoint(mousePos):
+                showBallistaTooltip()
+            elif catapultShopRect.collidepoint(mousePos):
+                showCatapultTooltip()
 
-    screen.blit(rangeSurface,(0,0))
-    screen.blit(placementSurface,(0,0))
-    towerShop()
-    mousePos = pygame.mouse.get_pos()
-    if placing == "none":   #Show tooltips when not in placing mode
-        if cannonShopRect.collidepoint(mousePos):
-           showCannonTooltip()
-        elif ballistaShopRect.collidepoint(mousePos):
-            showBallistaTooltip()
-        elif catapultShopRect.collidepoint(mousePos):
-            showCatapultTooltip()
-    
-    drawExplosionEffects()
-    drawStats()
-    for enemy in currentEnemies: #Draw enemy health bars and stats
-        enemy.drawHealthBar()
+        drawExplosionEffects()
+        drawStats()
+        for enemy in currentEnemies: #Draw enemy health bars and stats
+            enemy.drawHealthBar()
+    elif state == "start":
+        mainMenu.drawSelf()
+    elif state == "lost":
+        losingScreen.drawSelf()
     pygame.display.update()  #Framerate of 60 fps
     clock.tick(60)
