@@ -18,6 +18,10 @@ speed1Image = pygame.image.load("Images/speed_normal.png")
 speed1Image = pygame.transform.scale(speed1Image,(48,48))
 speed2Image = pygame.image.load("Images/speed_fast.png")
 speed2Image = pygame.transform.scale(speed2Image,(48,48))
+moneyImage = pygame.image.load("Images/money.png")
+moneyImage = pygame.transform.scale(moneyImage,(48,48))
+livesImage = pygame.image.load("Images/lives.png")
+livesImage = pygame.transform.scale(livesImage,(48,48))
 
 #Create enemy path
 gamePath = []
@@ -55,12 +59,14 @@ occupiedTiles = [[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
                  [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]]
 
 class Enemy:
-    def __init__(self,x,y,health,speed,imgPathList,animationTime):
+    def __init__(self,x,y,health,speed,imgPathList,animationTime,reward):
         self.x = x
         self.y = y
         self.health = health
         self.maxHealth = health
         self.speed = speed
+        self.reward = reward
+        self.hasGivenMoney = False
         self.pathIndex = 0
         #Loads basic Attributes for the Enemy class
         self.images = []
@@ -111,14 +117,20 @@ class Enemy:
                 self.y = gamePath[self.pathIndex][1]
 
         except Exception:
+            global lives
             for i,enemy in enumerate(currentEnemies):
                 if enemy == self:
+                    if self.health > 0:
+                        lives -= self.health
                     currentEnemies.pop(i)
 
     def dealDamage(self,damage):
+        global money
         self.health -= damage
         self.damageFlashTime = currentTime
-        if self.health <= 0:
+        if self.health <= 0 and not self.hasGivenMoney:
+            money += self.reward
+            self.hasGivenMoney = True
             self.pathIndex = 5000
 
     def getVelocity(self):
@@ -129,11 +141,11 @@ class Enemy:
 
 class Barbarian(Enemy):
     def __init__(self,x,y):
-        super().__init__(x,y,125,1,["Images/barbarian1.png","Images/barbarian2.png","Images/barbarian3.png","Images/barbarian4.png","Images/barbarian5.png","Images/barbarian6.png"],100)
+        super().__init__(x,y,125,1,["Images/barbarian1.png","Images/barbarian2.png","Images/barbarian3.png","Images/barbarian4.png","Images/barbarian5.png","Images/barbarian6.png"],100,50)
 
 class Goblin(Enemy):
     def __init__(self,x,y):
-        super().__init__(x,y,60,2,["Images/goblin1.png","Images/goblin2.png","Images/goblin3.png","Images/goblin4.png","Images/goblin5.png","Images/goblin6.png"],80)
+        super().__init__(x,y,60,2,["Images/goblin1.png","Images/goblin2.png","Images/goblin3.png","Images/goblin4.png","Images/goblin5.png","Images/goblin6.png"],80,20)
 
 class Tower:
     def __init__(self,x,y,atkSpeed,range,angle,selected,shootImgPathList,spawnedProjectileSpeed,spawnedProjectileImage,rotateProjectileImage,projectilePierce,projectileDamage,animationTime):
@@ -250,7 +262,7 @@ class Tower:
 
 class Cannon(Tower):
     def __init__(self, x, y):
-        super().__init__(x, y, 3000, 300, 0, False,["Images/cannon_idle.png","Images/cannon_shoot.png"],200,"Images/cannon_projectile.png",False,1,12,100)
+        super().__init__(x, y, 3000, 200, 0, False,["Images/cannon_idle.png","Images/cannon_shoot.png"],200,"Images/cannon_projectile.png",False,1,12,100)
 
     def shoot(self,angle):
         if currentTime-self.shotTime >= self.atkSpeed/speed:
@@ -266,14 +278,32 @@ class Cannon(Tower):
 
 class Ballista(Tower):
     def __init__(self, x, y):
-        super().__init__(x, y, 333, 400, 0, False,["Images/ballista1.png","Images/ballista2.png","Images/ballista3.png","Images/ballista4.png"],500, "Images/ballista_projectile.png", True, 1, 6, 70)
+        super().__init__(x, y, 333, 300, 0, False,["Images/ballista1.png","Images/ballista2.png","Images/ballista3.png","Images/ballista4.png"],500, "Images/ballista_projectile.png", True, 1, 6, 70)
+
+class Catapult(Tower):
+    def __init__(self, x, y):
+        super().__init__(x, y, 2500, 200, 0, False,["Images/catapult1.png","Images/catapult2.png","Images/catapult3.png","Images/catapult4.png","Images/catapult5.png","Images/catapult6.png"],350, "Images/catapult_projectile.png", True, 8, 16, 100)
+
+    def shoot(self,angle):
+        if currentTime-self.shotTime >= self.atkSpeed/speed:
+            self.angle = angle + 180
+            newAngle = math.radians(angle)
+            deltaX = 24*math.sin(newAngle)
+            deltaY = 24*math.cos(newAngle)
+            self.projectiles.append(Projectile(self.x+deltaX,self.y+deltaY,self.x,self.y,self.spawnedProjectileSpeed,angle,self.spawnedProjectileImage,self.rotateProjectileImage,self.projectileDamage,self.projectilePierce,self.range,True))
+            self.shootingPhase = len(self.shootingImages) - 1
+            self.shotTime = currentTime
+            self.phaseTime = currentTime
+            self.isCycled = False
 
 class Projectile:
-    def __init__(self,x,y,parentX,parentY,vel,angle,imgPath,toRotate,damage,pierce,range):
+    def __init__(self,x,y,parentX,parentY,vel,angle,imgPath,toRotate,damage,pierce,range,persist=False):
         self.x = x
         self.y = y
         self.parentX = parentX
         self.parentY = parentY
+        self.spawnTime = currentTime
+        self.persist = persist
         self.velX = vel*math.sin(math.radians(angle))
         self.velY = vel*math.cos(math.radians(angle))
         self.image = pygame.image.load(imgPath)
@@ -295,6 +325,10 @@ class Projectile:
         self.y += speed*self.velY/60
 
     def despawnCheck(self):
+        if self.persist:
+            if currentTime-self.spawnTime >= 5000/speed:
+                return True
+            return False
         if ((self.parentX-self.x)**2 + (self.parentY-self.y)**2)**0.5 >= self.range:
             return True
         return False
@@ -357,6 +391,11 @@ rounds = [[(Barbarian,0),(Barbarian,1000),(Goblin,1000),(Barbarian,1000),(Goblin
 roundEnemyIndex = 0
 lastSpawnTime = 0
 roundActive = False
+money = 300
+lives = 500
+cannonCost = 150
+ballistaCost = 300
+catapultCost = 300
 
 currentTowers = []
 currentEnemies = []
@@ -366,30 +405,63 @@ cannonImage = pygame.image.load("Images/cannon_idle.png")
 cannonImage = pygame.transform.scale(cannonImage,(48,48))
 ballistaImage = pygame.image.load("Images/ballista1.png")
 ballistaImage = pygame.transform.scale(ballistaImage,(48,48))
+catapultImage = pygame.image.load("Images/catapult1.png")
+catapultImage = pygame.transform.scale(catapultImage,(48,48))
+cannonShopRect = pygame.Rect(675,48,48,48)
+ballistaShopRect = pygame.Rect(677,96,48,48)
+catapultShopRect = pygame.Rect(675,144,48,48)
 explosionImages = []
 for i in range(1,9):
     explosionImage = pygame.image.load(f"Images/explosion{i}.png")
     explosionImage = pygame.transform.scale(explosionImage,(81,81))
     explosionImages.append(explosionImage)
 
+def tintUnaffordable(image):
+    tintedImage = image.copy()
+    # dark red tint = image - cyan
+    tintedImage.fill((30,128,128),special_flags=pygame.BLEND_RGB_SUB)
+    return tintedImage
+
+def getShopImage(image,cost):
+    if money < cost:
+        return tintUnaffordable(image)
+    return image
+
 def towerShop():
     roundText = gameFont.render(f"Round {roundNum}",True,(0,0,0))
     screen.blit(menu,(624,0))
     screen.blit(roundText,(648,10))
-    screen.blit(cannonImage,(675,50))
-    screen.blit(ballistaImage,(676.5,98))
+    screen.blit(getShopImage(cannonImage,cannonCost),cannonShopRect)
+    screen.blit(getShopImage(ballistaImage,ballistaCost),ballistaShopRect)
+    screen.blit(getShopImage(catapultImage,catapultCost),catapultShopRect)
+
+def drawStats():
+    moneyText = gameFont.render(str(money),True,(0,0,0))
+    livesText = gameFont.render(str(lives),True,(0,0,0))
+    screen.blit(moneyImage,(8,8))
+    screen.blit(moneyText,(60,14))
+    screen.blit(livesImage,(128,8))
+    screen.blit(livesText,(180,14))
 
 def placeTower(x,y):
-    global placing
+    global placing,money
     if not occupiedTiles[x][y]:
-        if placing == "cannon":
+        if placing == "cannon" and money >= cannonCost:
             coords = tiles[x][y].center
             currentTowers.append(Cannon(coords[0],coords[1]))
-        elif placing == "ballista":
+            money -= cannonCost
+        elif placing == "ballista" and money >= ballistaCost:
             coords = tiles[x][y].center
             currentTowers.append(Ballista(coords[0],coords[1]))
+            money -= ballistaCost
+        elif placing == "catapult" and money >= catapultCost:
+            coords = tiles[x][y].center
+            currentTowers.append(Catapult(coords[0],coords[1]))
+            money -= catapultCost
+        else:
+            return
         occupiedTiles[x][y] = 1
-        placing = "none"
+    placing = "none"
 
 def showCannonTooltip():
     mousePos = pygame.mouse.get_pos()
@@ -402,7 +474,7 @@ def showCannonTooltip():
     cannonTowerText = gameFont.render("Cannon",True,(0,0,0))
     cannonTowerTextRect = cannonTowerText.get_rect(center=(topleft[0]+96,topleft[1]+24))
     screen.blit(cannonTowerText,cannonTowerTextRect)
-    statsText = ["Cost:             $150","Attack Speed:   1/3s","Damage:          6","Range:          300","Pierce:          1"]
+    statsText = ["Cost:             $150","Attack Speed:   1/3s","Damage:          6","Range:          200","Pierce:          1"]
     for i,stat in enumerate(statsText):
         statsTextRender = smallFont.render(stat,True,(0,0,0))
         statsTextRenderRect = statsTextRender.get_rect(center=((topleft[0]+72,topleft[1]+70+i*35)))
@@ -419,7 +491,24 @@ def showBallistaTooltip():
     ballistaTowerText = gameFont.render("Ballista",True,(0,0,0))
     ballistaTowerTextRect = ballistaTowerText.get_rect(center=(topleft[0]+96,topleft[1]+24))
     screen.blit(ballistaTowerText,ballistaTowerTextRect)
-    statsText = ["Cost:             $300","Attack Speed:   3/s","Damage:          4","Range:          400","Pierce:          1"]
+    statsText = ["Cost:             $300","Attack Speed:   3/s","Damage:          4","Range:          300","Pierce:          1"]
+    for i,stat in enumerate(statsText):
+        statsTextRender = smallFont.render(stat,True,(0,0,0))
+        statsTextRenderRect = statsTextRender.get_rect(center=((topleft[0]+72,topleft[1]+70+i*35)))
+        screen.blit(statsTextRender,statsTextRenderRect)
+
+def showCatapultTooltip():
+    mousePos = pygame.mouse.get_pos()
+    topleft = (mousePos[0]-144,mousePos[1])
+    pygame.draw.rect(placementSurface,(255,255,255),(topleft[0],topleft[1],144,235))
+    screen.blit(placementSurface,(0,0))
+    pygame.draw.rect(screen,(0,0,0),(topleft[0],topleft[1],144,235),2)
+    pygame.draw.rect(screen,(0,0,0),(topleft[0],topleft[1]+50,144,2))
+    screen.blit(catapultImage,topleft)
+    catapultTowerText = gameFont.render("Catapult",True,(0,0,0))
+    catapultTowerTextRect = catapultTowerText.get_rect(center=(topleft[0]+96,topleft[1]+24))
+    screen.blit(catapultTowerText,catapultTowerTextRect)
+    statsText = ["Cost:             $300","Attack Speed:   1/2.5s","Damage:          12","Range:          200","Pierce:          8"]
     for i,stat in enumerate(statsText):
         statsTextRender = smallFont.render(stat,True,(0,0,0))
         statsTextRenderRect = statsTextRender.get_rect(center=((topleft[0]+72,topleft[1]+70+i*35)))
@@ -434,7 +523,7 @@ def startRound():
         roundActive = True
 
 def updateRound():
-    global roundEnemyIndex,lastSpawnTime,roundActive
+    global roundEnemyIndex,lastSpawnTime,roundActive,money
     if not roundActive:
         startRound()
     if roundActive and roundEnemyIndex < len(rounds[roundNum-1]):
@@ -444,6 +533,7 @@ def updateRound():
             roundEnemyIndex += 1
             lastSpawnTime = currentTime
     elif roundActive and not currentEnemies:
+        money += 150
         roundActive = False
 
 def drawExplosionEffects():
@@ -487,13 +577,18 @@ while True:
         if placing == "cannon":
             cannonRect = cannonImage.get_rect(center=mousePos)
             placementSurface.blit(cannonImage,cannonRect)
-            pygame.draw.circle(rangeSurface,(255,255,255),mousePos,300)
-            pygame.draw.circle(screen,(255,255,255),mousePos,300,2)
+            pygame.draw.circle(rangeSurface,(255,255,255),mousePos,200)
+            pygame.draw.circle(screen,(255,255,255),mousePos,200,2)
         elif placing == "ballista":
             ballistaRect = ballistaImage.get_rect(center=mousePos)
             placementSurface.blit(ballistaImage,ballistaRect)
-            pygame.draw.circle(rangeSurface,(255,255,255),mousePos,400)
-            pygame.draw.circle(screen,(255,255,255),mousePos,400,2)
+            pygame.draw.circle(rangeSurface,(255,255,255),mousePos,300)
+            pygame.draw.circle(screen,(255,255,255),mousePos,300,2)
+        elif placing == "catapult":
+            catapultRect = catapultImage.get_rect(center=mousePos)
+            placementSurface.blit(catapultImage,catapultRect)
+            pygame.draw.circle(rangeSurface,(255,255,255),mousePos,200)
+            pygame.draw.circle(screen,(255,255,255),mousePos,200,2)
 
 
     for event in pygame.event.get():
@@ -507,20 +602,24 @@ while True:
             if not towerClicked:
                 for tower in currentTowers:
                     tower.selected = False
-            shopClicked = event.pos[0] >= 675 and event.pos[0] <= 723 and event.pos[1] >= 50 and event.pos[1] <= 146
+            shopClicked = cannonShopRect.collidepoint(event.pos) or ballistaShopRect.collidepoint(event.pos) or catapultShopRect.collidepoint(event.pos)
             if placing != "none" and event.pos[0] >= 624 and not shopClicked:
                 placing = "none"
-            if event.pos[0] >= 675 and event.pos[0] <= 723:
-                if event.pos[1] >= 50 and event.pos[1] < 98:
-                    if placing == "cannon":
-                        placing = "none"
-                    else:
-                        placing = "cannon"
-                elif event.pos[1] >= 98 and event.pos[1] <= 146:
-                    if placing == "ballista":
-                        placing = "none"
-                    else:
-                        placing = "ballista"
+            if cannonShopRect.collidepoint(event.pos):
+                if placing == "cannon":
+                    placing = "none"
+                else:
+                    placing = "cannon"
+            elif ballistaShopRect.collidepoint(event.pos):
+                if placing == "ballista":
+                    placing = "none"
+                else:
+                    placing = "ballista"
+            elif catapultShopRect.collidepoint(event.pos):
+                if placing == "catapult":
+                    placing = "none"
+                else:
+                    placing = "catapult"
             if event.pos[0] >= 672 and event.pos[0] <= 720 and event.pos[1] >= 720 and event.pos[1] <= 768:
                 if speed == 1:
                     speed = 2
@@ -542,6 +641,11 @@ while True:
                     placing = "ballista"
                 else:
                     placing = "none"
+            elif event.key == pygame.K_e:
+                if placing != "catapult":
+                    placing = "catapult"
+                else:
+                    placing = "none"
             elif event.key == pygame.K_SPACE:
                 if speed == 1:
                     speed = 2
@@ -552,8 +656,8 @@ while True:
             for enemy in currentEnemies:
                 enemy.move()
     currentTime = pygame.time.get_ticks()
-    updateRound()    
-                    
+    updateRound()
+
     for tower in currentTowers:
         tower.updateAnimation()
         tower.projChecks()
@@ -567,16 +671,19 @@ while True:
     screen.blit(placementSurface,(0,0))
     towerShop()
     mousePos = pygame.mouse.get_pos()
-    if mousePos[0] >= 675 and mousePos[0] <= 723 and placing == "none": 
-        if mousePos[1] >= 50 and mousePos[1] < 98:
+    if placing == "none":
+        if cannonShopRect.collidepoint(mousePos):
            showCannonTooltip()
-        elif mousePos[1] >= 98 and mousePos[1] <= 146:
+        elif ballistaShopRect.collidepoint(mousePos):
             showBallistaTooltip()
+        elif catapultShopRect.collidepoint(mousePos):
+            showCatapultTooltip()
     if speed == 1:
         screen.blit(speed1Image,(672,720))
     else:
         screen.blit(speed2Image,(672,720))
     drawExplosionEffects()
+    drawStats()
     for enemy in currentEnemies:
         enemy.drawHealthBar()
     pygame.display.update()
